@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Partialbruchzerlegung üben</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="sheet">
+    <h1>Partialbruchzerlegung</h1>
+    <h2>Übungsapplet zur Fingerspitzregel</h2>
+
+    <section class="controls" aria-label="Aufgabenauswahl">
+      <label for="kind"><strong>Aufgabentyp</strong></label>
+      <select id="kind">
+        <option value="simple">Einfache Nullstellen</option>
+        <option value="multiple">Mehrfache Nullstellen</option>
+        <option value="complex">Komplexe Nullstellen</option>
+        <option value="mixed">Gemischt</option>
+      </select>
+      <button id="new-task" type="button">Neue Aufgabe</button>
+    </section>
+
+    <section class="problem" aria-labelledby="problem-title">
+      <h3 id="problem-title">Aufgabe</h3>
+      <p>Zerlege den folgenden rationalen Ausdruck in Partialbrüche:</p>
+      <div id="problem-math" class="display-math"></div>
+      <div class="action-row">
+        <button id="show-solution" type="button">Lösung anzeigen</button>
+        <span id="verification-status" class="verification-status" role="status"></span>
+      </div>
+    </section>
+
+    <section id="solution" class="solution" hidden aria-live="polite">
+      <div class="recipe">
+        <h3>Rezept.</h3>
+        <div id="recipe-content"></div>
+      </div>
+      <h3 class="example-heading">Lösung</h3>
+      <div id="steps"></div>
+      <div class="step-controls">
+        <button id="previous-step" type="button">Zurück</button>
+        <span id="step-counter"></span>
+        <button id="next-step" type="button">Nächster Schritt</button>
+      </div>
+    </section>
+  </main>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="app.js"></script>
+</body>
+</html>
