@@ -3,7 +3,8 @@
 const rnd = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const choice = a => a[rnd(0, a.length - 1)];
 const nonzero = (limit = 5) => choice(Array.from({length: 2 * limit}, (_, i) => i < limit ? i - limit : i - limit + 1));
-const trim = p => { while (p.length > 1 && p[p.length - 1] === 0) p.pop(); return p; };
+const EPS = 1e-9;
+const trim = p => { while (p.length > 1 && Math.abs(p[p.length - 1]) < EPS) p.pop(); return p; };
 const add = (a, b) => trim(Array.from({length: Math.max(a.length, b.length)}, (_, i) => (a[i] || 0) + (b[i] || 0)));
 const scale = (a, c) => trim(a.map(x => x * c));
 const mul = (a, b) => {
@@ -55,21 +56,47 @@ function combineTerms(terms) {
   return {num: trim(num), den, factors};
 }
 
+// Rationale Zahl x als [Zähler, Nenner] (Kettenbruch, kleine Nenner).
+function frac(x) {
+  const sign = x < 0 ? -1 : 1; let v = Math.abs(x);
+  let [h0, h1, k0, k1] = [0, 1, 1, 0];
+  for (let i = 0; i < 20; i++) {
+    const a = Math.floor(v);
+    [h0, h1] = [h1, a * h1 + h0]; [k0, k1] = [k1, a * k1 + k0];
+    if (Math.abs(Math.abs(x) - h1 / k1) < EPS || v - a < EPS) break;
+    v = 1 / (v - a);
+  }
+  return [sign * h1, k1];
+}
+function numTex(x) {
+  const [p, q] = frac(x);
+  return q === 1 ? String(p) : `${p < 0 ? "-" : ""}\\frac{${Math.abs(p)}}{${q}}`;
+}
+const gcd = (a, b) => b ? gcd(b, a % b) : a;
+// Hauptnenner der Koeffizienten, damit Zähler ganzzahlig geschrieben werden.
+function commonDen(p) { return p.reduce((l, c) => { const q = frac(c)[1]; return l * q / gcd(l, q); }, 1); }
+
 function realFactorTex(r, power = 1) {
+  if (r === 0) return power === 1 ? "s" : `s^{${power}}`;
   const core = r >= 0 ? `(s-${r})` : `(s+${-r})`;
   return power === 1 ? core : `${core}^{${power}}`;
 }
-function quadFactorTex(a, b) { return `((s-${a})^2+${b*b})`; }
+function quadFactorTex(a, b) {
+  if (a === 0) return `(s^2+${numTex(b*b)})`;
+  if (Number.isInteger(a)) return `((s-${a})^2+${numTex(b*b)})`;
+  return `(${polyText([a*a+b*b, -2*a, 1])})`;
+}
 function realFactorWL(r, power = 1) { const core = `(s-${r})`; return power === 1 ? core : `${core}^${power}`; }
 function quadFactorWL(a, b) { return `((s-${a})^2+${b*b})`; }
 
 function polyText(p, mode = "tex") {
   let out = "";
   for (let i = p.length - 1; i >= 0; i--) {
-    const c = p[i]; if (!c) continue;
+    const c = p[i]; if (Math.abs(c) < EPS) continue;
     const sign = c < 0 ? "-" : "+", n = Math.abs(c);
     const variable = i === 0 ? "" : i === 1 ? "s" : mode === "tex" ? `s^{${i}}` : `s^${i}`;
-    const coeff = variable && n === 1 ? "" : String(n);
+    const [pn, qn] = frac(n);
+    const coeff = variable && Math.abs(n - 1) < EPS ? "" : mode === "tex" ? numTex(n) : qn === 1 ? String(pn) : `(${pn}/${qn})`;
     out += (out ? sign : c < 0 ? "-" : "") + coeff + variable;
   }
   return out || "0";
@@ -81,20 +108,27 @@ function factorListTex(factors) {
 function factorListWL(factors) {
   return factors.map(f => f.type === "real" ? realFactorWL(f.r, f.mult) : quadFactorWL(f.a, f.b)).join("*");
 }
-function expressionTex(combined) { return `\\frac{${polyText(combined.num)}}{${factorListTex(combined.factors)}}`; }
+function expressionTex(combined) {
+  const L = commonDen(combined.num);
+  return `\\frac{${polyText(scale(combined.num.slice(), L))}}{${L > 1 ? L : ""}${factorListTex(combined.factors)}}`;
+}
 function expressionWL(combined) { return `(${polyText(combined.num, "wl")})/(${factorListWL(combined.factors)})`; }
 
 function termTex(t) {
-  if (t.type === "real") return `\\frac{${t.c}}{${realFactorTex(t.r, t.power)}}`;
-  const n = polyText([t.d, t.c]);
-  return `\\frac{${n}}{${quadFactorTex(t.a, t.b)}}`;
+  if (t.type === "real") {
+    const [p, q] = frac(t.c);
+    return `\\frac{${p}}{${q > 1 ? q : ""}${realFactorTex(t.r, t.power)}}`;
+  }
+  const L = commonDen([t.d, t.c]);
+  return `\\frac{${polyText([t.d * L, t.c * L])}}{${L > 1 ? L : ""}${quadFactorTex(t.a, t.b)}}`;
 }
+const isZeroTerm = t => Math.abs(t.c) < EPS && (t.type === "real" || Math.abs(t.d) < EPS);
 function termWL(t) {
   if (t.type === "real") return `(${t.c})/${realFactorWL(t.r, t.power)}`;
   return `(${t.c}*s+${t.d})/${quadFactorWL(t.a, t.b)}`;
 }
 function sumTex(terms) {
-  return terms.map((t, i) => {
+  return terms.filter(t => !isZeroTerm(t)).map((t, i) => {
     const neg = t.type === "real" ? t.c < 0 : (t.c < 0 || (t.c === 0 && t.d < 0));
     const normalized = neg ? {...t, c:-t.c, d:t.type === "complex" ? -t.d : t.d} : t;
     const raw = termTex(normalized);
@@ -154,6 +188,13 @@ function generateTask(kind) {
   throw new Error("Keine passende Aufgabe gefunden");
 }
 
+// Aufgabentyp aus der Nennerstruktur ablesen (für feste Aufgaben).
+function kindOf(factors) {
+  const hasComplex=factors.some(f=>f.type==="complex"), hasReal=factors.some(f=>f.type==="real");
+  if (hasComplex) return hasReal ? "mixed" : "complex";
+  return factors.some(f=>f.mult>1) ? "multiple" : "simple";
+}
+
 function recipeHtml(kind) {
   if (kind === "simple") return `<ol><li><strong>Ansatz:</strong> Für jeden einfachen Linearfaktor einen Bruch ansetzen.</li><li><strong>Abdecken:</strong> Den zugehörigen Nennerfaktor abdecken.</li><li><strong>Einsetzen:</strong> Die Nullstelle einsetzen und den Koeffizienten ablesen.</li></ol>`;
   if (kind === "multiple") return `<ol><li><strong>Alle Potenzen</strong> eines mehrfachen Faktors in den Ansatz aufnehmen.</li><li>Mit der höchsten Potenz beginnen: abdecken und einsetzen.</li><li>Den gefundenen Bruch abziehen, kürzen und die Regel wiederholen.</li><li>Bleibt nur noch ein einzelner Partialbruch übrig, den Koeffizienten direkt ablesen – fertig.</li></ol>`;
@@ -189,16 +230,18 @@ function buildSteps(task) {
   function coverStep(current, target) {
     const targetFactor=pow([-target.r,1],target.power);
     const restDen=divideExact(current.den,targetFactor);
-    const top=evalPoly(current.num,target.r), bottom=evalPoly(restDen,target.r);
-    const value=top/bottom;
+    const L=commonDen(current.num);
+    const top=evalPoly(scale(current.num.slice(),L),target.r), bottom=L*evalPoly(restDen,target.r);
+    const value=top/bottom, [vp,vq]=frac(value);
+    const reduced=vq>1 && vp===top && vq===bottom; // Bruch ist schon gekürzt
     const covered=realFactorTex(target.r,target.power);
     const label=labels.get(target).num;
-    const denOthers=current.factors.map(f => {
+    const denOthers=(L>1?L:"")+current.factors.map(f => {
       if(f.type==="real"&&f.r===target.r) return f.mult===target.power ? `\\underbrace{\\color{teal}\\cancel{${covered}}}_{\\text{\\scriptsize abdecken}}` : realFactorTex(f.r,f.mult);
       return f.type==="real"?realFactorTex(f.r,f.mult):quadFactorTex(f.a,f.b);
     }).join("");
     steps.push({title:`${number++} Faktor ${covered} abdecken und s=${target.r} einsetzen`, html:
-      `<div class="math-line" data-tex="\\frac{${polyText(current.num)}}{${denOthers}}\\;\\color{blue}\\xrightarrow{\\;s=${target.r}\\;}\\;\\frac{${top}}{${bottom}}=${value}"></div><p>Damit ist der zugehörige Koeffizient <span class="katex-slot" data-tex="${label}=${value}"></span>.</p>`});
+      `<div class="math-line" data-tex="\\frac{${polyText(scale(current.num.slice(),L))}}{${denOthers}}\\;\\color{blue}\\xrightarrow{\\;s=${target.r}\\;}\\;\\frac{${numTex(top)}}{${numTex(bottom)}}${reduced?"":`=${numTex(value)}`}"></div><p>Damit ist der zugehörige Koeffizient <span class="katex-slot" data-tex="${label}=${numTex(value)}"></span>.</p>`});
   }
 
   for (const target of multiTerms) {
@@ -207,11 +250,11 @@ function buildSteps(task) {
     coverStep(current, target);
     remaining.splice(remaining.indexOf(target),1);
     const rem=combineTerms(remaining);
-    let html=`<div class="math-line" data-tex="R(s)=${expressionTex(current)}-${termTex(target)}=${expressionTex(rem)}"></div>`;
+    let html=`<div class="math-line" data-tex="R(s)=${expressionTex(current)}${target.c<0?`+${termTex({...target,c:-target.c})}`:`-${termTex(target)}`}=${expressionTex(rem)}"></div>`;
     // Bleibt nur ein einziger Ansatzterm übrig, steht dessen Koeffizient bereits im Rest.
     if (remaining.length===1) {
       const last=remaining[0], l=labels.get(last);
-      const readOff=last.type==="real" ? `${l.num}=${last.c}` : `${l.c}=${last.c},\\;${l.d}=${last.d}`;
+      const readOff=last.type==="real" ? `${l.num}=${numTex(last.c)}` : `${l.c}=${numTex(last.c)},\\;${l.d}=${numTex(last.d)}`;
       html+=`<p>Der Rest hat bereits die Form des letzten Ansatzterms. Der Koeffizient lässt sich direkt ablesen: <span class="katex-slot" data-tex="${readOff}"></span>. Damit sind wir fertig – kein weiterer Schritt nötig.</p>`;
       remaining=[];
     }
@@ -229,21 +272,23 @@ function buildSteps(task) {
   if(complexTerms.length) {
     const remCombined=combineTerms(complexTerms);
     const ansatzSymbolic=complexTerms.map(t=>{const l=labels.get(t); return `\\frac{${l.c}s+${l.d}}{${quadFactorTex(t.a,t.b)}}`;}).join("+");
-    const knownTex=realTerms.length ? `${sumTex(realTerms)}+` : "";
+    const knownTex=realTerms.some(t=>!isZeroTerm(t)) ? `${sumTex(realTerms)}+` : "";
     steps.push({title:`${number++} Restglied R(s) bestimmen`, html:
       `<div class="math-line" data-tex="F(s)=${knownTex}R(s)"></div>`+
       `<div class="math-line" data-tex="R(s)=${expressionTex(remCombined)}=${ansatzSymbolic}"></div>`});
 
     const quotients=complexTerms.map(t=>divideExact(remCombined.den,termDenominator(t)));
+    const L=commonDen(remCombined.num);
     const rhsNumerator=complexTerms.map((t,i)=>{
       const l=labels.get(t), q=quotients[i];
       const trivial=q.length===1 && q[0]===1;
       return trivial ? `(${l.c}s+${l.d})` : `(${l.c}s+${l.d})(${polyText(q)})`;
     }).join("+");
+    const rhs=L===1 ? rhsNumerator : complexTerms.length===1 ? `${L}${rhsNumerator}` : `${L}\\left[${rhsNumerator}\\right]`;
     steps.push({title:`${number++} Nenner beseitigen`, html:
-      `<div class="math-line" data-tex="${polyText(remCombined.num)}=${rhsNumerator}"></div>`});
+      `<div class="math-line" data-tex="${polyText(scale(remCombined.num.slice(),L))}=${rhs}"></div>`});
 
-    const results=complexTerms.map(t=>{const l=labels.get(t); return `${l.c}=${t.c},\\;${l.d}=${t.d}`;}).join(",\\qquad ");
+    const results=complexTerms.map(t=>{const l=labels.get(t); return `${l.c}=${numTex(t.c)},\\;${l.d}=${numTex(t.d)}`;}).join(",\\qquad ");
     steps.push({title:`${number++} Koeffizientenvergleich`, html:
       `<p>Koeffizienten gleicher Potenzen von <em>s</em> vergleichen liefert:</p><div class="math-line" data-tex="${results}"></div>`});
   }
@@ -273,10 +318,21 @@ function init() {
   const $=id=>document.getElementById(id);
   const kind=$("kind"), problem=$("problem-math"), solution=$("solution"), stepsEl=$("steps");
   const show=$("show-solution"), status=$("verification-status");
+  const scriptSelect=$("script-example");
+  scriptSelect.innerHTML=SCRIPT_EXAMPLES.map((ex,i)=>`<option value="${i}">${ex.source} (S. ${ex.page})</option>`).join("");
   let task, steps=[], shown=0;
   function newTask(){
-    task=generateTask(kind.value); steps=[]; shown=0; solution.hidden=true; status.textContent=""; status.className="verification-status";
-    problem.dataset.tex=`F(s)=${expressionTex(task.combined)}`; renderMath(problem.parentElement);
+    const isScript=kind.value==="script";
+    scriptSelect.hidden=!isScript;
+    if(isScript) {
+      const terms=SCRIPT_EXAMPLES[scriptSelect.value].terms, combined=combineTerms(terms);
+      task={kind:kindOf(combined.factors),fixed:true,terms,combined,factors:combined.factors};
+    } else {
+      task=generateTask(kind.value);
+    }
+    problem.dataset.tex=`F(s)=${expressionTex(task.combined)}`;
+    steps=[]; shown=0; solution.hidden=true; status.textContent=""; status.className="verification-status";
+    renderMath(problem.parentElement);
     show.disabled=false;
   }
   function displaySteps(){
@@ -284,14 +340,24 @@ function init() {
     renderMath(stepsEl); $("previous-step").disabled=shown<=1; $("next-step").disabled=shown>=steps.length;
     $("step-counter").textContent=`${shown} / ${steps.length}`;
   }
-  $("new-task").addEventListener("click",newTask); kind.addEventListener("change",newTask);
+  function revealSolution(recipeKind){
+    shown=1; $("recipe-content").innerHTML=recipeHtml(recipeKind); solution.hidden=false; displaySteps();
+    solution.scrollIntoView({behavior:"smooth",block:"start"});
+  }
+  $("new-task").addEventListener("click",()=>{
+    // Bei Skript-Beispielen springt „Neue Aufgabe“ zum nächsten Beispiel der Liste.
+    if(kind.value==="script") scriptSelect.value=String((Number(scriptSelect.value)+1)%SCRIPT_EXAMPLES.length);
+    newTask();
+  });
+  kind.addEventListener("change",newTask); scriptSelect.addEventListener("change",newTask);
   show.addEventListener("click",async()=>{
-    show.disabled=true; status.textContent="Prüfung mit Wolfram Cloud läuft …"; status.className="verification-status";
+    show.disabled=true;
+    if(task.fixed) { steps=buildSteps(task); revealSolution(task.kind); return; }
+    status.textContent="Prüfung mit Wolfram Cloud läuft …"; status.className="verification-status";
     try {
       await verifyWithWolfram(task);
       status.textContent="Mit Wolfram Cloud geprüft ✓"; status.className="verification-status ok";
-      steps=buildSteps(task); shown=1; $("recipe-content").innerHTML=recipeHtml(task.kind); solution.hidden=false; displaySteps();
-      solution.scrollIntoView({behavior:"smooth",block:"start"});
+      steps=buildSteps(task); revealSolution(task.kind);
     } catch(e) {
       status.textContent=`Prüfung fehlgeschlagen: ${e.message}`; status.className="verification-status error"; show.disabled=false;
     }

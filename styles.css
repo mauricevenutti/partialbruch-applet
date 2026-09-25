@@ -66,6 +66,7 @@ select, input {
 }
 
 select { min-width: 245px; }
+#script-example[hidden] { display: none; }
 input { flex: 1 1 420px; min-width: 0; }
 
 button {
@@ -158,3 +159,4 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   .step { animation: none; }
 }
+
