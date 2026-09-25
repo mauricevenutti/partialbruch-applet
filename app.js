@@ -156,7 +156,7 @@ function generateTask(kind) {
 
 function recipeHtml(kind) {
   if (kind === "simple") return `<ol><li><strong>Ansatz:</strong> Für jeden einfachen Linearfaktor einen Bruch ansetzen.</li><li><strong>Abdecken:</strong> Den zugehörigen Nennerfaktor abdecken.</li><li><strong>Einsetzen:</strong> Die Nullstelle einsetzen und den Koeffizienten ablesen.</li></ol>`;
-  if (kind === "multiple") return `<ol><li><strong>Alle Potenzen</strong> eines mehrfachen Faktors in den Ansatz aufnehmen.</li><li>Mit der höchsten Potenz beginnen: abdecken und einsetzen.</li><li>Den gefundenen Bruch abziehen, kürzen und die Regel wiederholen.</li></ol>`;
+  if (kind === "multiple") return `<ol><li><strong>Alle Potenzen</strong> eines mehrfachen Faktors in den Ansatz aufnehmen.</li><li>Mit der höchsten Potenz beginnen: abdecken und einsetzen.</li><li>Den gefundenen Bruch abziehen, kürzen und die Regel wiederholen.</li><li>Bleibt nur noch ein einzelner Partialbruch übrig, den Koeffizienten direkt ablesen – fertig.</li></ol>`;
   if (kind === "complex") return `<ol><li>Zu jedem quadratischen Faktor einen linearen Zähler ansetzen.</li><li>Nenner beseitigen.</li><li>Die Koeffizienten der Potenzen von <em>s</em> vergleichen.</li></ol>`;
   return `<ol><li>Für reelle Faktoren alle erforderlichen Partialbrüche ansetzen.</li><li>Reelle Nullstellen durch Abdecken, Einsetzen, Abziehen und Kürzen bearbeiten.</li><li>Für komplexe Paare lineare Zähler ansetzen und die Koeffizienten vergleichen.</li></ol>`;
 }
@@ -202,16 +202,26 @@ function buildSteps(task) {
   }
 
   for (const target of multiTerms) {
+    if (!remaining.includes(target)) continue;
     const current=combineTerms(remaining);
     coverStep(current, target);
     remaining.splice(remaining.indexOf(target),1);
     const rem=combineTerms(remaining);
-    steps.push({title:`${number++} Gefundenen Anteil abziehen und kürzen`,html:`<div class="math-line" data-tex="R(s)=${expressionTex(current)}-${termTex(target)}=${expressionTex(rem)}"></div>`});
+    let html=`<div class="math-line" data-tex="R(s)=${expressionTex(current)}-${termTex(target)}=${expressionTex(rem)}"></div>`;
+    // Bleibt nur ein einziger Ansatzterm übrig, steht dessen Koeffizient bereits im Rest.
+    if (remaining.length===1) {
+      const last=remaining[0], l=labels.get(last);
+      const readOff=last.type==="real" ? `${l.num}=${last.c}` : `${l.c}=${last.c},\\;${l.d}=${last.d}`;
+      html+=`<p>Der Rest hat bereits die Form des letzten Ansatzterms. Der Koeffizient lässt sich direkt ablesen: <span class="katex-slot" data-tex="${readOff}"></span>. Damit sind wir fertig – kein weiterer Schritt nötig.</p>`;
+      remaining=[];
+    }
+    steps.push({title:`${number++} Gefundenen Anteil abziehen und kürzen`,html});
   }
 
-  if (simpleTerms.length) {
+  const openSimple=simpleTerms.filter(t=>remaining.includes(t));
+  if (openSimple.length) {
     const current=combineTerms(remaining);
-    for (const target of simpleTerms) coverStep(current, target);
+    for (const target of openSimple) coverStep(current, target);
     remaining=remaining.filter(t=>!(t.type==="real"&&t.power===1));
   }
 
